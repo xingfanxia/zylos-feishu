@@ -1,4 +1,12 @@
-# CLAUDE.md
+# zylos-feishu — agent guide
+
+## Project scale and verification
+
+**Profile: personal messaging integration.** Feishu connects real people and agent sessions. Use a focused existing `npm test` case for changed message parsing/routing; permissions, attachments and send/retry behavior need targeted recipient-isolation and duplicate-send checks. UI/docs edits remain lightweight. Do not send real messages or restart unrelated services for tests.
+
+- The requested behavior/questions define completion. Reviews are read-only unless fixes are requested; report unrelated findings without adding tasks or test backfill.
+- Use the smallest existing check that proves the change. Add tests for a concrete regression or consequential boundary; no blanket TDD, coverage target, full suite, plans or reviewer chain. Preserve configured CI and actual release gates; reuse still-valid results.
+- Keep the existing structure. Internal contract errors should be clear; add retries/fallbacks only for an observed external failure or supported contract. Keep credentials and message content private; inspect security at changed boundaries.
 
 Development guidelines for zylos-feishu.
 
