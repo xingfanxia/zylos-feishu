@@ -25,6 +25,7 @@ import { listChatMembers } from './lib/chat.js';
 import { sendThreadAware } from './lib/reply-send.js';
 import { extractInteractiveText } from './lib/card-text.js';
 import { renderMergeForward, itemsFromResponse } from './lib/merge-forward.js';
+import { describeInboundMedia, labelDownloadedMedia } from './lib/inbound-media.js';
 
 // C4 receive interface path
 const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
@@ -1127,10 +1128,12 @@ function extractMessageContent(message) {
       return { text: '', imageKeys: content.image_key ? [content.image_key] : [], fileKey: null, fileName: null };
     case 'file':
       return { text: '', imageKeys: [], fileKey: content.file_key, fileName: content.file_name || 'unknown' };
+    // Voice notes and videos are downloaded like files: isolated agent
+    // instances cannot read the app credentials needed to fetch them later.
     case 'audio':
-      return { text: `[audio, file_key: ${content.file_key || 'unknown'}, msg_id: ${message.message_id}]`, imageKeys: [], fileKey: null, fileName: null };
+      return { text: '', imageKeys: [], fileKey: content.file_key || null, fileName: `voice-${String(message.message_id || '').slice(-8)}.opus`, media: { kind: 'audio', durationMs: content.duration } };
     case 'media':
-      return { text: `[media: ${content.file_name || 'video'}, file_key: ${content.file_key || 'unknown'}, msg_id: ${message.message_id}]`, imageKeys: [], fileKey: null, fileName: null };
+      return { text: '', imageKeys: [], fileKey: content.file_key || null, fileName: content.file_name || 'video.mp4', media: { kind: 'video', fileName: content.file_name || 'video.mp4', durationMs: content.duration } };
     case 'sticker':
       return { text: `[sticker, file_key: ${content.file_key || 'unknown'}]`, imageKeys: [], fileKey: null, fileName: null };
     case 'interactive':
@@ -1239,7 +1242,9 @@ async function handleMessage(data) {
 
   const extracted = extractMessageContent(message);
   let { text } = extracted;
-  const { imageKeys, fileKey, fileName } = extracted;
+  const { imageKeys, fileKey, fileName, media } = extracted;
+  // How a file/voice/video is labelled before it is downloaded.
+  const fileLabel = media ? describeInboundMedia(media) : `[file: ${fileName}]`;
   // A pending merge_forward has no text yet (deliberately not fetched until the
   // DM/group access gate passes below) — log a fixed marker instead of real
   // content from a sender/chat that may end up rejected anyway.
@@ -1252,7 +1257,7 @@ async function handleMessage(data) {
     logText = logText ? `${logText}\n${imageInfo}` : imageInfo;
   }
   if (fileKey) {
-    const fileInfo = `[file: ${fileName}, file_key: ${fileKey}, msg_id: ${messageId}]`;
+    const fileInfo = `[${media ? (media.kind === 'audio' ? 'voice' : 'video') : 'file'}: ${fileName}, file_key: ${fileKey}, msg_id: ${messageId}]`;
     logText = logText ? `${logText}\n${fileInfo}` : fileInfo;
   }
 
@@ -1341,10 +1346,11 @@ async function handleMessage(data) {
       }
       const result = localPath ? await downloadFile(messageId, fileKey, localPath) : { success: false };
       if (result.success && localPath) {
-        const msg = formatMessage('p2p', senderName, `[file: ${fileName}]`, [], localPath, { quotedContent, threadContext, threadRootId });
+        const label = media ? await labelDownloadedMedia(media, localPath) : fileLabel;
+        const msg = formatMessage('p2p', senderName, label, [], localPath, { quotedContent, threadContext, threadRootId });
         sendToC4('feishu', endpoint, msg, rejectReply);
       } else {
-        const msg = formatMessage('p2p', senderName, `[file download failed: ${fileName}]`, [], null, { quotedContent, threadContext, threadRootId });
+        const msg = formatMessage('p2p', senderName, `${fileLabel} (download failed)`, [], null, { quotedContent, threadContext, threadRootId });
         sendToC4('feishu', endpoint, msg, rejectReply);
       }
       return;
@@ -1473,7 +1479,7 @@ async function handleMessage(data) {
 
     if (fileKey) {
       if (smartNoMention) {
-        const msg = formatMessage('group', senderName, cleanLogText || `[file: ${fileName}]`, contextMessages, null, { quotedContent, threadContext, threadRootId, groupName: getGroupName(chatId), smartHint: true });
+        const msg = formatMessage('group', senderName, cleanLogText || fileLabel, contextMessages, null, { quotedContent, threadContext, threadRootId, groupName: getGroupName(chatId), smartHint: true });
         sendToC4('feishu', endpoint, msg, groupRejectReply);
         return;
       }
@@ -1487,7 +1493,8 @@ async function handleMessage(data) {
       }
       const result = localPath ? await downloadFile(messageId, fileKey, localPath) : { success: false };
       if (result.success && localPath) {
-        const msg = formatMessage('group', senderName, `[file: ${fileName}]${cleanText ? ' ' + cleanText : ''}`, contextMessages, localPath, { quotedContent, threadContext, threadRootId, groupName: getGroupName(chatId) });
+        const label = media ? await labelDownloadedMedia(media, localPath) : fileLabel;
+        const msg = formatMessage('group', senderName, `${label}${cleanText ? ' ' + cleanText : ''}`, contextMessages, localPath, { quotedContent, threadContext, threadRootId, groupName: getGroupName(chatId) });
         sendToC4('feishu', endpoint, msg, groupRejectReply);
       } else {
         removeTypingIndicator(messageId);

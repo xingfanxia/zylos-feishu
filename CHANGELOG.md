@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Inbound voice notes and videos are now downloaded by the component, like
+  files, instead of being passed on as a bare `file_key`. Isolated agent
+  instances cannot read the app credentials needed to fetch them later.
+  Voice notes are transcribed with Gemini (`gemini-4-argon`, component
+  `GEMINI_API_KEY`, override with `FEISHU_TRANSCRIBE_MODEL`) and arrive as
+  `[voice message, Ns] transcript: …`. Videos are labelled "saved only, not
+  analyzed".
+
 ## [0.3.7-ax.2] - 2026-09-02
 
 ### Fixed
