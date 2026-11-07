@@ -23,6 +23,7 @@ import { chooseReplyTarget } from '../src/lib/reply-target.js';
 import { convertAtMentionsForCard } from '../src/lib/at-mention.js';
 import { sendToGroup, sendMessage, uploadImage, sendImage, replyToMessage, sendMarkdownCard, replyMarkdownCard } from '../src/lib/message.js';
 import { sendFileMediaThreadAware } from '../src/lib/file-media.js';
+import { parseMediaMessage } from '../src/lib/media-directive.js';
 
 const TYPING_DIR = path.join(DATA_DIR, 'typing');
 
@@ -78,8 +79,7 @@ if (!config.enabled) {
   process.exit(1);
 }
 
-// Parse media prefix
-const mediaMatch = message.match(/^\[MEDIA:(\w+)\](.+)$/);
+const media = parseMediaMessage(message);
 
 /**
  * Split long message into chunks (markdown-aware).
@@ -402,9 +402,19 @@ async function recordOutgoing(text) {
 
 async function send() {
   try {
-    if (mediaMatch) {
-      const [, mediaType, mediaPath] = mediaMatch;
-      const recordLabel = await sendMedia(mediaType, mediaPath);
+    if (media) {
+      // Text before the media may fail normally: nothing has been sent yet.
+      if (media.before) await sendText(endpointId, media.before);
+      const recordLabel = await sendMedia(media.type, media.path);
+      // Text after the media is best effort: the media already landed, so a
+      // failure here must not fail the send and cause a duplicate on retry.
+      if (media.after) {
+        try {
+          await sendText(endpointId, media.after);
+        } catch (capErr) {
+          console.error(`Warning: media sent but trailing text failed: ${capErr.message}`);
+        }
+      }
       await recordOutgoing(recordLabel);
     } else {
       await sendText(endpointId, message);

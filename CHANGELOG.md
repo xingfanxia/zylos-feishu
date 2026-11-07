@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Image and file uploads no longer fail on a slow path to Feishu: each
+  attempt's timeout grows with the file size (20 s plus 10 s per MB, at most
+  90 s) instead of a fixed 30 s, timeouts, dropped connections, 429 and 5xx are
+  retried within a 110 s budget, the tenant token is reused, and a failure
+  reports Feishu's code, msg and log_id. On 2026-11-04 the fixed timeout failed
+  8 of 16 photos of about 2 MB.
+- In websocket mode the component now serves `/internal/record-outgoing`, so the
+  bot's own replies enter the chat history again; it was only served in webhook
+  mode.
+- A `[MEDIA:type]path` line with caption text before or after it is sent as
+  media plus captions in the order written, not as text with the raw path.
+- Ported from the ax-devbox live copy: a missing `create_time` no longer drops
+  every lazily loaded message, the upload helpers check readability first, and
+  `cli.js` sends an MP4 as inline media.
 - Inbound voice notes and videos are now downloaded by the component, like
   files, instead of being passed on as a bare `file_key`. Isolated agent
   instances cannot read the app credentials needed to fetch them later.

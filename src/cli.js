@@ -117,7 +117,8 @@ async function main() {
           console.error(`Failed to upload file: ${uploadFileResult.message}`);
           process.exit(1);
         }
-        result = await sendFile(args[1], uploadFileResult.fileKey);
+        result = await sendFile(args[1], uploadFileResult.fileKey, 'chat_id',
+          uploadFileResult.fileType === 'mp4' ? 'media' : 'file');
         break;
 
       case 'download-image':

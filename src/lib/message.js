@@ -5,9 +5,9 @@
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-import FormData from 'form-data';
 import { getClient } from './client.js';
 import { getCredentials, getProxyConfig } from './config.js';
+import { uploadMultipart } from './upload.js';
 
 /**
  * Get fresh access token for direct API calls
@@ -156,15 +156,20 @@ export async function listMessages(chatId, limit = 20, sortType = 'desc', startT
     const res = await client.im.message.list({ params });
 
     if (res.code === 0) {
-      const messages = (res.data.items || []).map(msg => ({
-        id: msg.message_id,
-        type: msg.msg_type,
-        content: parseMessageContent(msg.body?.content, msg.msg_type),
-        sender: msg.sender?.id,
-        senderType: msg.sender?.sender_type,
-        createTime: new Date(parseInt(msg.create_time)).toISOString(),
-        mentions: msg.mentions || [],
-      }));
+      const messages = (res.data.items || []).map(msg => {
+        // A missing or non-numeric create_time would make toISOString() throw
+        // and drop every lazily loaded row, not just this one.
+        const ct = parseInt(msg.create_time, 10);
+        return {
+          id: msg.message_id,
+          type: msg.msg_type,
+          content: parseMessageContent(msg.body?.content, msg.msg_type),
+          sender: msg.sender?.id,
+          senderType: msg.sender?.sender_type,
+          createTime: (Number.isFinite(ct) ? new Date(ct) : new Date()).toISOString(),
+          mentions: msg.mentions || [],
+        };
+      });
 
       return { success: true, messages, hasMore: res.data.has_more };
     } else {
@@ -217,32 +222,16 @@ export async function downloadImage(messageId, imageKey, savePath) {
 /**
  * Upload image to Feishu
  */
-export async function uploadImage(imagePath, imageType = 'message') {
+export async function uploadImage(imagePath, imageType = 'message', deps = {}) {
   try {
-    const token = await getAccessToken();
-    const proxy = getProxyConfig();
-
-    const form = new FormData();
-    form.append('image_type', imageType);
-    form.append('image', fs.createReadStream(imagePath));
-
-    const res = await axios({
-      method: 'POST',
-      url: 'https://open.feishu.cn/open-apis/im/v1/images',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        ...form.getHeaders()
-      },
-      data: form,
-      timeout: 30000,
-      proxy
-    });
-
-    if (res.data.code === 0) {
-      return { success: true, imageKey: res.data.data.image_key, message: 'Image uploaded successfully' };
-    } else {
-      return { success: false, message: `Failed to upload image: ${res.data.msg}`, code: res.data.code };
+    const data = await uploadMultipart(
+      'https://open.feishu.cn/open-apis/im/v1/images',
+      { image_type: imageType }, 'image', imagePath, deps,
+    );
+    if (data?.code === 0) {
+      return { success: true, imageKey: data.data.image_key, message: 'Image uploaded successfully' };
     }
+    return { success: false, message: `Failed to upload image: ${data?.msg}`, code: data?.code };
   } catch (err) {
     return { success: false, message: err.message };
   }
@@ -315,26 +304,18 @@ function inferFileType(ext) {
 /**
  * Upload file to Feishu
  */
-export async function uploadFile(filePath, fileType) {
-  const client = getClient();
-
+export async function uploadFile(filePath, fileType, deps = {}) {
   try {
     if (!fileType) fileType = inferFileType(path.extname(filePath));
-
-    const res = await client.im.file.create({
-      data: {
-        file_type: fileType,
-        file_name: path.basename(filePath),
-        file: fs.createReadStream(filePath),
-      },
-    });
-
-    const fileKey = res.file_key ?? res.data?.file_key;
-    if (fileKey) {
-      return { success: true, fileKey, message: 'File uploaded successfully' };
-    } else {
-      return { success: false, message: `Failed to upload file: ${res.msg ?? JSON.stringify(res)}`, code: res.code };
+    const data = await uploadMultipart(
+      'https://open.feishu.cn/open-apis/im/v1/files',
+      { file_type: fileType, file_name: path.basename(filePath) }, 'file', filePath, deps,
+    );
+    const fileKey = data?.data?.file_key;
+    if (data?.code === 0 && fileKey) {
+      return { success: true, fileKey, fileType, message: 'File uploaded successfully' };
     }
+    return { success: false, message: `Failed to upload file: ${data?.msg ?? JSON.stringify(data)}`, code: data?.code };
   } catch (err) {
     return { success: false, message: err.message };
   }

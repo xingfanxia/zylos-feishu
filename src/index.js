@@ -26,6 +26,7 @@ import { sendThreadAware } from './lib/reply-send.js';
 import { extractInteractiveText } from './lib/card-text.js';
 import { renderMergeForward, itemsFromResponse } from './lib/merge-forward.js';
 import { describeInboundMedia, labelDownloadedMedia } from './lib/inbound-media.js';
+import { recordOutgoingHandler } from './lib/record-outgoing.js';
 
 // C4 receive interface path
 const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
@@ -1616,55 +1617,57 @@ function startWebhook(creds) {
     });
   });
 
-  // Internal endpoint: record bot's outgoing messages into in-memory history
-  app.post('/internal/record-outgoing', (req, res) => {
-    // Validate internal token (process-local secret) to prevent unauthorized injection
-    const token = req.headers['x-internal-token'];
-    if (!token || token !== INTERNAL_SECRET) {
-      return res.status(403).json({ error: 'unauthorized' });
-    }
-    const { chatId, threadId, text, messageId } = req.body || {};
-    if (!text) return res.status(400).json({ error: 'missing text' });
-    const entry = {
-      timestamp: new Date().toISOString(),
-      message_id: messageId || `bot_${Date.now()}`,
-      user_id: botOpenId || 'bot',
-      user_name: botAppName || 'bot',
-      text
-    };
-    // Thread messages go to thread only (context isolation)
-    if (threadId) {
-      recordHistoryEntry(getHistoryKey(chatId, threadId), entry);
-    } else if (chatId) {
-      recordHistoryEntry(chatId, entry);
-    }
-    res.json({ ok: true });
-  });
+  addInternalRoutes(app);
 
+  listenLocal(app, PORT, 'Webhook server');
+}
+
+function addInternalRoutes(app) {
+  app.post('/internal/record-outgoing', recordOutgoingHandler({
+    secret: INTERNAL_SECRET,
+    record: recordHistoryEntry,
+    historyKey: getHistoryKey,
+    bot: () => ({ openId: botOpenId, name: botAppName }),
+  }));
+}
+
+/** Listen on 127.0.0.1, retrying while a previous process releases the port. */
+function listenLocal(app, port, label) {
   const maxRetries = 5;
   const retryDelayMs = 1000;
   let attempt = 0;
 
   const listenWithRetry = () => {
-    const server = app.listen(PORT, '127.0.0.1', () => {
+    const server = app.listen(port, '127.0.0.1', () => {
       webhookServer = server;
-      console.log(`[feishu] Webhook server running on 127.0.0.1:${PORT}`);
+      console.log(`[feishu] ${label} running on 127.0.0.1:${port}`);
     });
 
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE' && attempt < maxRetries) {
         attempt += 1;
-        console.warn(`[feishu] Port ${PORT} in use, retrying (${attempt}/${maxRetries})...`);
+        console.warn(`[feishu] Port ${port} in use, retrying (${attempt}/${maxRetries})...`);
         try { server.close(); } catch {}
         setTimeout(listenWithRetry, retryDelayMs);
         return;
       }
-      console.error(`[feishu] Webhook server failed: ${err.message}`);
+      console.error(`[feishu] ${label} failed: ${err.message}`);
       process.exit(1);
     });
   };
 
   listenWithRetry();
+}
+
+/** Websocket mode still needs the local endpoints scripts/send.js calls. */
+function startInternalServer() {
+  const app = express();
+  app.use(express.json());
+  addInternalRoutes(app);
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok', service: 'zylos-feishu', mode: 'websocket', cursors: Object.keys(groupCursors).length });
+  });
+  listenLocal(app, config.webhook_port || 3458, 'Internal server');
 }
 
 // ============================================================
@@ -1754,5 +1757,6 @@ if (!creds.app_id || !creds.app_secret) {
     startWebhook(creds);
   } else {
     startWebSocket(creds);
+    startInternalServer();
   }
 })();
