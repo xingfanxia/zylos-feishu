@@ -92,3 +92,20 @@ export function senderMentionPrefix({ sender, type } = {}, kind, text) {
   if (typeof text === 'string' && text.includes(sender)) return '';
   return kind === 'card' ? `<at id=${sender}></at> ` : `<at user_id="${sender}"></at> `;
 }
+
+/**
+ * Once-per-send wrapper around senderMentionPrefix. One send.js run can post
+ * several messages (caption before a [MEDIA:] line, the media, caption after);
+ * only the first text message that actually goes out carries the mention.
+ * Call `sent()` after each successful text send; a failed card attempt that
+ * falls back to plain text therefore still gets the prefix on the retry.
+ *
+ * @param {{ sender?: string, type?: string }} endpoint parsed endpoint fields
+ */
+export function senderMentionOnce(endpoint) {
+  let done = false;
+  return {
+    prefix: (kind, text) => (done ? '' : senderMentionPrefix(endpoint, kind, text)),
+    sent: () => { done = true; },
+  };
+}

@@ -24,6 +24,7 @@ import { getUserInfo } from './lib/contact.js';
 import { listChatMembers } from './lib/chat.js';
 import { sendThreadAware } from './lib/reply-send.js';
 import { extractInteractiveText } from './lib/card-text.js';
+import { resolveMentions } from './lib/mentions.js';
 import { renderMergeForward, itemsFromResponse } from './lib/merge-forward.js';
 import { describeInboundMedia, labelDownloadedMedia } from './lib/inbound-media.js';
 import { recordOutgoingHandler } from './lib/record-outgoing.js';
@@ -722,27 +723,6 @@ function isBotMentioned(mentions, botId) {
     const mentionId = m.id?.open_id || m.id?.user_id || m.id?.app_id || '';
     return (normalizedBotId && String(mentionId) === normalizedBotId) || m.key === '@_all';
   });
-}
-
-/**
- * Resolve @_user_N placeholders in message text to real names.
- * Feishu replaces @mentions with @_user_1, @_user_2, etc. in the raw text.
- * The mentions array contains the mapping: { key: "@_user_1", name: "Name", id: { ... } }
- */
-function resolveMentions(text, mentions, { stripBot = false, botOpenId: botId } = {}) {
-  if (!text || !mentions || !Array.isArray(mentions) || mentions.length === 0) return text;
-
-  let resolved = text;
-  for (const m of mentions) {
-    if (!m.key) continue;
-    const isBotMention = botId && (m.id?.open_id === botId || m.id?.app_id === botId);
-    if (stripBot && isBotMention) {
-      resolved = resolved.replace(new RegExp(m.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'g'), '');
-    } else if (m.name) {
-      resolved = resolved.replace(m.key, `@${m.name}`);
-    }
-  }
-  return resolved.trim();
 }
 
 /**

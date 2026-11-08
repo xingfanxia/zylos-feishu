@@ -20,7 +20,7 @@ dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
 
 import { getConfig, DATA_DIR } from '../src/lib/config.js';
 import { chooseReplyTarget } from '../src/lib/reply-target.js';
-import { convertAtMentionsForCard, senderMentionPrefix } from '../src/lib/at-mention.js';
+import { convertAtMentionsForCard, senderMentionOnce } from '../src/lib/at-mention.js';
 import { sendToGroup, sendMessage, uploadImage, sendImage, replyToMessage, sendMarkdownCard, replyMarkdownCard } from '../src/lib/message.js';
 import { sendFileMediaThreadAware } from '../src/lib/file-media.js';
 import { parseMediaMessage } from '../src/lib/media-directive.js';
@@ -46,7 +46,7 @@ const message = args.slice(1).join(' ');
  * Parse structured endpoint string.
  * Format: chatId|type:group|root:rootId|parent:parentId|msg:messageId|thread:threadId|sender:openId
  * Backward compatible: plain chatId without | works as before. `sender` is the
- * asker's open_id; group replies @-mention them (senderMentionPrefix).
+ * asker's open_id; group replies @-mention them (src/lib/at-mention.js).
  */
 const ENDPOINT_KEYS = new Set(['type', 'root', 'parent', 'msg', 'thread', 'sender']);
 
@@ -67,6 +67,8 @@ function parseEndpoint(endpoint) {
 
 const parsedEndpoint = parseEndpoint(rawEndpoint);
 const endpointId = parsedEndpoint.chatId;
+// Only the first text message this run sends @-mentions the asker.
+const senderMention = senderMentionOnce(parsedEndpoint);
 
 if (message.trim() === '[SKIP]') {
   markTypingDone(parsedEndpoint.msg);
@@ -193,7 +195,7 @@ async function sendCardChunk(chunk, isFirstChunk) {
   // text path — so convert here, or every mention in a markdown-bearing message
   // renders as literal text and notifies nobody. See src/lib/at-mention.js.
   let cardChunk = convertAtMentionsForCard(chunk);
-  if (isFirstChunk) cardChunk = senderMentionPrefix(parsedEndpoint, 'card', cardChunk) + cardChunk;
+  if (isFirstChunk) cardChunk = senderMention.prefix('card', cardChunk) + cardChunk;
   // p2p DMs never reply-to (invisible in the 1:1 view); only groups reply.
   const replyTarget = chooseReplyTarget(parsedEndpoint, { isFirstChunk });
   let result;
@@ -256,6 +258,7 @@ async function sendText(endpoint, text) {
     if (!result.success) {
       throw new Error(result.message);
     }
+    senderMention.sent();
     // Small delay between chunks
     if (i < chunks.length - 1) {
       await new Promise(r => setTimeout(r, 500));
@@ -273,7 +276,7 @@ async function sendText(endpoint, text) {
 async function sendPlainTextChunk(endpoint, chunk, isFirstChunk) {
   const { chatId, type } = parsedEndpoint;
   const isDM = type === 'p2p';
-  if (isFirstChunk) chunk = senderMentionPrefix(parsedEndpoint, 'text', chunk) + chunk;
+  if (isFirstChunk) chunk = senderMention.prefix('text', chunk) + chunk;
   // p2p DMs never reply-to (invisible in the 1:1 view); only groups reply.
   const replyTarget = chooseReplyTarget(parsedEndpoint, { isFirstChunk });
   let result;

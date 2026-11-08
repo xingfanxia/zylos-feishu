@@ -10,14 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Group replies @-mention the person who asked. The inbound endpoint carries
   `|sender:<open_id>` and `scripts/send.js` prefixes the first chunk with that
-  mention, unless the reply already mentions them. Restores the ax-devbox patch
-  lost in the 0.3.1 to 0.3.6 upgrade on 2026-08-20.
+  mention, unless the reply already mentions them. Only the first text message
+  of a send carries it, so a `[MEDIA:]` send with captions before and after
+  mentions once. Restores the ax-devbox patch lost in the 0.3.1 to 0.3.6
+  upgrade on 2026-08-20.
 
 ### Fixed
 - The bot's own cards in lazily loaded history read as their content, not as
   raw JSON with Feishu's "请升级至最新版本客户端" notice: history is fetched with
   `card_msg_content_type: user_card_content` and card rows are parsed. That
   notice is never extracted as card text.
+- `@_user_N` mention keys are resolved in one pass, longest first and only at
+  the end of a key, so `@_user_1` no longer rewrites the start of `@_user_10`
+  and a message with ten or more mentions names the right people. A `$` in a
+  display name is inserted literally. Lost in the 2026-08-20 upgrade.
 - Image and file uploads no longer fail on a slow path to Feishu: each
   attempt's timeout grows with the file size (20 s plus 10 s per MB, at most
   90 s) instead of a fixed 30 s, timeouts, dropped connections, 429 and 5xx are

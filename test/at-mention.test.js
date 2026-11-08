@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { convertAtMentionsForCard, senderMentionPrefix } from '../src/lib/at-mention.js';
+import { convertAtMentionsForCard, senderMentionPrefix, senderMentionOnce } from '../src/lib/at-mention.js';
 
 // Feishu's two @-mention syntaxes are not interchangeable:
 //   text        <at user_id="ou_xxx">Display Name</at>
@@ -138,4 +138,23 @@ test('no prefix when the reply already mentions the sender (either syntax)', () 
   const ep = { type: 'group', sender: 'ou_asker' };
   assert.equal(senderMentionPrefix(ep, 'text', 'ok <at user_id="ou_asker">A</at>'), '');
   assert.equal(senderMentionPrefix(ep, 'card', 'ok <at id=ou_asker></at>'), '');
+});
+
+// ── senderMentionOnce ────────────────────────────────────────────────────────
+
+test('[MEDIA:] with captions before and after: only the first caption is prefixed', () => {
+  const m = senderMentionOnce({ type: 'group', sender: 'ou_asker' });
+  // caption before the media goes out first and carries the mention
+  assert.equal(m.prefix('card', 'before'), '<at id=ou_asker></at> ');
+  m.sent();
+  // the caption after the media is a second message: no second mention
+  assert.equal(m.prefix('card', 'after'), '');
+  assert.equal(m.prefix('text', 'after'), '');
+});
+
+test('a failed card attempt keeps the prefix for its plain-text retry', () => {
+  const m = senderMentionOnce({ type: 'group', sender: 'ou_asker' });
+  assert.equal(m.prefix('card', 'x'), '<at id=ou_asker></at> ');
+  // card send failed: sent() not called, the text fallback still mentions
+  assert.equal(m.prefix('text', 'x'), '<at user_id="ou_asker"></at> ');
 });
