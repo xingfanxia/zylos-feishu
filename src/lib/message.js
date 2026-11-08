@@ -148,6 +148,9 @@ export async function listMessages(chatId, limit = 20, sortType = 'desc', startT
       page_size: Math.min(limit, 50),
       sort_type: sortType === 'asc' ? 'ByCreateTimeAsc' : 'ByCreateTimeDesc',
       user_id_type: 'open_id',
+      // Return cards as sent, not the transformed form whose body is only an
+      // upgrade notice (same parameter as im.message.get in index.js).
+      card_msg_content_type: 'user_card_content',
     };
 
     if (startTime) params.start_time = String(startTime);

@@ -72,3 +72,23 @@ export function convertAtMentionsForCard(text) {
     }),
   );
 }
+
+/**
+ * @-mention prefix for the first chunk of a GROUP reply, so the person who
+ * asked gets a visible tag and a notification (a threaded reply alone does
+ * neither). The inbound endpoint carries the asker as `|sender:<open_id>`.
+ *
+ * Returns '' outside group chats, without a sender, or when the reply already
+ * mentions that open_id. `kind` picks the syntax: 'card' for interactive
+ * messages, 'text' for plain text (see the table at the top of this file).
+ *
+ * @param {{ sender?: string, type?: string }} endpoint parsed endpoint fields
+ * @param {'card'|'text'} kind
+ * @param {string} text the chunk the prefix will be prepended to
+ * @returns {string}
+ */
+export function senderMentionPrefix({ sender, type } = {}, kind, text) {
+  if (!sender || type !== 'group') return '';
+  if (typeof text === 'string' && text.includes(sender)) return '';
+  return kind === 'card' ? `<at id=${sender}></at> ` : `<at user_id="${sender}"></at> `;
+}

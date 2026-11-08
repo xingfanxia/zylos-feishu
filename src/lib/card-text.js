@@ -7,6 +7,11 @@
 const MAX_CARD_WALK_DEPTH = 100;   // real cards nest < ~10; 100 is unreachable normally
 const MAX_CARD_WALK_NODES = 5000;  // total element nodes visited per card
 
+// The transformed read-back of a card (what im.message.get/list return without
+// `card_msg_content_type: user_card_content`) replaces the body with this
+// upgrade notice. It is never the card's content, so it is never extracted.
+const UPGRADE_PLACEHOLDER = '请升级至最新版本客户端，以查看内容';
+
 /**
  * Extract readable text from a Feishu interactive (card) message.
  *
@@ -35,7 +40,9 @@ export function extractInteractiveText(content) {
   try {
     const parts = [];
 
-    const pushText = (t) => { if (typeof t === 'string' && t.trim()) parts.push(t); };
+    const pushText = (t) => {
+      if (typeof t === 'string' && t.trim() && t.trim() !== UPGRADE_PLACEHOLDER) parts.push(t);
+    };
 
     // Recursively extract visible text from card elements. Covers the shapes
     // Feishu actually emits on a read-back card (Schema 2.0 `body.elements`,

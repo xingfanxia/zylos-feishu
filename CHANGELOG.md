@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Group replies @-mention the person who asked. The inbound endpoint carries
+  `|sender:<open_id>` and `scripts/send.js` prefixes the first chunk with that
+  mention, unless the reply already mentions them. Restores the ax-devbox patch
+  lost in the 0.3.1 to 0.3.6 upgrade on 2026-08-20.
+
 ### Fixed
+- The bot's own cards in lazily loaded history read as their content, not as
+  raw JSON with Feishu's "请升级至最新版本客户端" notice: history is fetched with
+  `card_msg_content_type: user_card_content` and card rows are parsed. That
+  notice is never extracted as card text.
 - Image and file uploads no longer fail on a slow path to Feishu: each
   attempt's timeout grows with the file size (20 s plus 10 s per MB, at most
   90 s) instead of a fixed 30 s, timeouts, dropped connections, 429 and 5xx are

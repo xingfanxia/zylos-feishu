@@ -81,6 +81,20 @@ test('title fallback only when no element text is present (e.g. image-only rende
   assert.equal(extractInteractiveText(c), '[card] 仅标题');
 });
 
+// Live shape (2026-11-08) of the bot's own markdown card read back WITHOUT
+// card_msg_content_type: Feishu swaps the body for an upgrade notice. That
+// notice must never be shown as the card's content.
+test('transformed card with only the upgrade notice is not read as content', () => {
+  const c = { title: null, elements: [[
+    { tag: 'img', image_key: 'img_v3_x' },
+    { tag: 'text', text: '请升级至最新版本客户端，以查看内容' },
+    { tag: 'text', text: '' },
+  ]] };
+  assert.equal(extractInteractiveText(c), '[interactive message]');
+  c.title = '日报';
+  assert.equal(extractInteractiveText(c), '[card] 日报');
+});
+
 test('unrecognized/empty card returns the placeholder', () => {
   assert.equal(extractInteractiveText({}), '[interactive message]');
   assert.equal(extractInteractiveText(null), '[interactive message]');

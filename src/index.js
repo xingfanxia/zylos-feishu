@@ -480,7 +480,7 @@ async function getContextWithFallback(containerId, currentMessageId, containerTy
         const msgs = result.messages.sort((a, b) => new Date(a.createTime) - new Date(b.createTime));
         for (const msg of msgs) {
           const userName = await resolveUserName(msg.sender);
-          // Parse post messages (raw JSON) into readable text
+          // Parse post and card messages (raw JSON) into readable text
           let text = msg.content;
           if (msg.type === 'post' && typeof text === 'string') {
             try {
@@ -488,6 +488,12 @@ async function getContextWithFallback(containerId, currentMessageId, containerTy
               const content = parsed.content || [];
               ({ text } = extractPostText(content, msg.id));
             } catch { /* use raw content */ }
+          } else if (msg.type === 'interactive' && typeof text === 'string') {
+            try {
+              text = extractInteractiveText(JSON.parse(text));
+            } catch {
+              text = '[interactive message]';
+            }
           }
           // Resolve @_user_N mentions in lazy-loaded messages
           if (msg.mentions && msg.mentions.length > 0) {
@@ -800,10 +806,11 @@ function sendToC4(source, endpoint, content, onReject) {
 
 /**
  * Build structured endpoint string for C4.
- * Format: chatId|type:group|root:rootId|parent:parentId|msg:messageId
- * C4 treats endpoint as opaque string; send.js parses it.
+ * Format: chatId|type:group|root:rootId|parent:parentId|msg:messageId|thread:threadId|sender:openId
+ * C4 treats endpoint as opaque string; send.js parses it. `sender` stays last:
+ * scripts/send.js @-mentions that open_id on group replies.
  */
-function buildEndpoint(chatId, { chatType, rootId, parentId, messageId, threadId } = {}) {
+function buildEndpoint(chatId, { chatType, rootId, parentId, messageId, threadId, senderOpenId } = {}) {
   let endpoint = chatId;
   if (chatType) {
     endpoint += `|type:${chatType}`;
@@ -819,6 +826,9 @@ function buildEndpoint(chatId, { chatType, rootId, parentId, messageId, threadId
   }
   if (threadId) {
     endpoint += `|thread:${threadId}`;
+  }
+  if (senderOpenId) {
+    endpoint += `|sender:${senderOpenId}`;
   }
   return endpoint;
 }
@@ -1263,7 +1273,7 @@ async function handleMessage(data) {
   }
 
   // Build structured endpoint with routing metadata
-  const endpoint = buildEndpoint(chatId, { chatType, rootId, parentId, messageId, threadId });
+  const endpoint = buildEndpoint(chatId, { chatType, rootId, parentId, messageId, threadId, senderOpenId });
 
   // quotedContent is fetched lazily after routing eligibility checks
   let quotedContent = null;

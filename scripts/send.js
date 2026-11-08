@@ -20,7 +20,7 @@ dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
 
 import { getConfig, DATA_DIR } from '../src/lib/config.js';
 import { chooseReplyTarget } from '../src/lib/reply-target.js';
-import { convertAtMentionsForCard } from '../src/lib/at-mention.js';
+import { convertAtMentionsForCard, senderMentionPrefix } from '../src/lib/at-mention.js';
 import { sendToGroup, sendMessage, uploadImage, sendImage, replyToMessage, sendMarkdownCard, replyMarkdownCard } from '../src/lib/message.js';
 import { sendFileMediaThreadAware } from '../src/lib/file-media.js';
 import { parseMediaMessage } from '../src/lib/media-directive.js';
@@ -44,10 +44,11 @@ const message = args.slice(1).join(' ');
 
 /**
  * Parse structured endpoint string.
- * Format: chatId|type:group|root:rootId|parent:parentId|msg:messageId
- * Backward compatible: plain chatId without | works as before.
+ * Format: chatId|type:group|root:rootId|parent:parentId|msg:messageId|thread:threadId|sender:openId
+ * Backward compatible: plain chatId without | works as before. `sender` is the
+ * asker's open_id; group replies @-mention them (senderMentionPrefix).
  */
-const ENDPOINT_KEYS = new Set(['type', 'root', 'parent', 'msg', 'thread']);
+const ENDPOINT_KEYS = new Set(['type', 'root', 'parent', 'msg', 'thread', 'sender']);
 
 function parseEndpoint(endpoint) {
   const parts = endpoint.split('|');
@@ -191,7 +192,8 @@ async function sendCardChunk(chunk, isFirstChunk) {
   // it is the only one documented for c4-send and the one that works on the
   // text path — so convert here, or every mention in a markdown-bearing message
   // renders as literal text and notifies nobody. See src/lib/at-mention.js.
-  const cardChunk = convertAtMentionsForCard(chunk);
+  let cardChunk = convertAtMentionsForCard(chunk);
+  if (isFirstChunk) cardChunk = senderMentionPrefix(parsedEndpoint, 'card', cardChunk) + cardChunk;
   // p2p DMs never reply-to (invisible in the 1:1 view); only groups reply.
   const replyTarget = chooseReplyTarget(parsedEndpoint, { isFirstChunk });
   let result;
@@ -271,6 +273,7 @@ async function sendText(endpoint, text) {
 async function sendPlainTextChunk(endpoint, chunk, isFirstChunk) {
   const { chatId, type } = parsedEndpoint;
   const isDM = type === 'p2p';
+  if (isFirstChunk) chunk = senderMentionPrefix(parsedEndpoint, 'text', chunk) + chunk;
   // p2p DMs never reply-to (invisible in the 1:1 view); only groups reply.
   const replyTarget = chooseReplyTarget(parsedEndpoint, { isFirstChunk });
   let result;

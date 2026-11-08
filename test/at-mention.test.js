@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { convertAtMentionsForCard } from '../src/lib/at-mention.js';
+import { convertAtMentionsForCard, senderMentionPrefix } from '../src/lib/at-mention.js';
 
 // Feishu's two @-mention syntaxes are not interchangeable:
 //   text        <at user_id="ou_xxx">Display Name</at>
@@ -117,4 +117,25 @@ test('handles empty and non-string input without throwing', () => {
   assert.equal(convertAtMentionsForCard(''), '');
   assert.equal(convertAtMentionsForCard(null), null);
   assert.equal(convertAtMentionsForCard(undefined), undefined);
+});
+
+// ── senderMentionPrefix ──────────────────────────────────────────────────────
+
+test('group reply gets the sender prefix in the syntax of its message type', () => {
+  const ep = { type: 'group', sender: 'ou_asker' };
+  assert.equal(senderMentionPrefix(ep, 'card', 'hi'), '<at id=ou_asker></at> ');
+  assert.equal(senderMentionPrefix(ep, 'text', 'hi'), '<at user_id="ou_asker"></at> ');
+});
+
+test('no prefix outside groups or without a sender', () => {
+  assert.equal(senderMentionPrefix({ type: 'p2p', sender: 'ou_asker' }, 'text', 'hi'), '');
+  assert.equal(senderMentionPrefix({ type: 'group' }, 'card', 'hi'), '');
+  assert.equal(senderMentionPrefix({}, 'card', 'hi'), '');
+  assert.equal(senderMentionPrefix(undefined, 'card', 'hi'), '');
+});
+
+test('no prefix when the reply already mentions the sender (either syntax)', () => {
+  const ep = { type: 'group', sender: 'ou_asker' };
+  assert.equal(senderMentionPrefix(ep, 'text', 'ok <at user_id="ou_asker">A</at>'), '');
+  assert.equal(senderMentionPrefix(ep, 'card', 'ok <at id=ou_asker></at>'), '');
 });
